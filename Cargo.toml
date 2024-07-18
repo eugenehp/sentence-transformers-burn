@@ -1,15 +1,11 @@
 [package]
 name = "sentence_transformers"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-burn = { path="./dependencies/burn/burn" } # v0.8.0 was not compiling for some reason
-burn-wgpu = { path="./dependencies/burn/burn-wgpu" }
-burn-tch = { path="./dependencies/burn/burn-tch" }
-candle = { path="./dependencies/candle/candle-core", package = "candle-core", features = ["accelerate"] }
 libm = "0.2.7"
 npy = "0.4.0"
 ndarray = "0.15.6"
@@ -18,6 +14,8 @@ serde = "1"
 tokio = { version = "1.32.0", features = ["full"] }
 warp = "0.3.5"
 serde_json = "1.0.105"
+burn = { version = "0.13.2", features = ["candle", "accelerate", "wgpu", "tch"] }
+candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.6.0", features = ["accelerate", "metal"] }
 
 [[bin]]
 name = "server"

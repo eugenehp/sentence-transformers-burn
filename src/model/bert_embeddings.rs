@@ -33,16 +33,16 @@ pub struct BertEmbeddings<B: Backend> {
 
 impl BertEmbeddingsConfig {
   /// Initializes BertEmbeddings with default weights
-  pub fn init<B: Backend>(&self) -> BertEmbeddings<B> {
+  pub fn init<B: Backend>(&self, device: &B::Device) -> BertEmbeddings<B> {
       let word_embeddings = 
-          EmbeddingConfig::new(self.vocab_size, self.hidden_size).init();
+          EmbeddingConfig::new(self.vocab_size, self.hidden_size).init(device);
       let position_embeddings = 
-          EmbeddingConfig::new(self.max_position_embeddings, self.hidden_size).init();
+          EmbeddingConfig::new(self.max_position_embeddings, self.hidden_size).init(device);
       let token_type_embeddings = 
-          EmbeddingConfig::new(self.type_vocab_size, self.hidden_size).init();
+          EmbeddingConfig::new(self.type_vocab_size, self.hidden_size).init(device);
       let layer_norm_config = LayerNormConfig::new(self.hidden_size);
       let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-      let layer_norm = layer_norm_config.init();
+      let layer_norm = layer_norm_config.init(device);
       let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
       BertEmbeddings {
@@ -58,7 +58,7 @@ impl BertEmbeddingsConfig {
   /// Initializes BertEmbeddings with provided weights
   pub fn init_with<B: Backend>(
       &self,
-      record: BertEmbeddingsRecord<B>,
+      record: BertEmbeddingsRecord<B>, device: &B::Device
   ) -> BertEmbeddings<B> {
       let word_embeddings = 
           EmbeddingConfig::new(self.vocab_size, self.hidden_size).init_with(record.word_embeddings);
@@ -95,7 +95,7 @@ impl<B: Backend> BertEmbeddings<B> {
 
     let device = embeddings.device();
 
-    let token_type_ids = Tensor::<B, 2, Int>::zeros(input_shape.clone()).to_device(&device.clone()); // Assuming you have a zeros method
+    let token_type_ids = Tensor::<B, 2, Int>::zeros(input_shape.clone(), &device).to_device(&device.clone()); // Assuming you have a zeros method
     let token_type_embeddings = self.token_type_embeddings.forward(token_type_ids);
 
     embeddings = embeddings + token_type_embeddings;
@@ -110,7 +110,7 @@ impl<B: Backend> BertEmbeddings<B> {
 
     let shape = Shape::new([1, seq_length]);
     let data = Data::new(position_values, shape);
-    let mut position_ids_tensor = Tensor::<B, 2, Int>::from_ints(data);
+    let mut position_ids_tensor = Tensor::<B, 2, Int>::from_ints(data, &device);
     position_ids_tensor = position_ids_tensor.to_device(&device.clone());
 
     let position_embeddings = self.position_embeddings.forward(position_ids_tensor);

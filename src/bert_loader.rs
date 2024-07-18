@@ -13,7 +13,7 @@ use std::io::Read;
 use std::fs::File;
 use std::collections::HashMap;
 use npy::NpyData;
-use candle::{safetensors, Device, Tensor as CandleTensor};
+use candle_core::{safetensors, Device, Tensor as CandleTensor};
 use serde_json::Value;
 
 fn load_npy_scalar<B: Backend>(filename: &str) -> Vec<f32> {
@@ -28,7 +28,7 @@ fn load_npy_scalar<B: Backend>(filename: &str) -> Vec<f32> {
     data_vec
 }
 
-fn load_1d_tensor<B: Backend>(filename: &str) -> Param<Tensor<B, 1>> {
+fn load_1d_tensor<B: Backend>(filename: &str, device: &B::Device) -> Param<Tensor<B, 1>> {
   // Open the file in read-only mode.
   let mut buf = vec![];
 
@@ -43,13 +43,13 @@ fn load_1d_tensor<B: Backend>(filename: &str) -> Param<Tensor<B, 1>> {
   let data = Data::new(data_vec[1..].to_vec(), shape);
 
   // Convert the loaded data into an actual 1D Tensor using from_floats
-  let tensor = Tensor::<B, 1>::from_floats(data);
+  let tensor = Tensor::<B, 1>::from_floats(data, device);
 
-  let param = Param::new(ParamId::new(), tensor);
+  let param = Param::initialized(ParamId::new(), tensor);
   param
 }
 
-fn load_2d_tensor<B: Backend>(filename: &str) -> Param<Tensor<B, 2>> {
+fn load_2d_tensor<B: Backend>(filename: &str, device: &B::Device) -> Param<Tensor<B, 2>> {
   // Open the file in read-only mode.
   let mut buf = vec![];
 
@@ -70,84 +70,84 @@ fn load_2d_tensor<B: Backend>(filename: &str) -> Param<Tensor<B, 2>> {
   // Convert the reshaped data into an actual 2D Tensor using from_floats
   let shape = Shape::new([tensor_rows, tensor_cols]);
   let data = Data::new(tensor_values_flat, shape);
-  let tensor = Tensor::<B, 2>::from_floats(data);
+  let tensor = Tensor::<B, 2>::from_floats(data, device);
 
-  let param = Param::new(ParamId::new(), tensor);
+  let param = Param::initialized(ParamId::new(), tensor);
   param
 }
 
-fn load_1d_tensor_from_candle<B: Backend>(tensor: &CandleTensor) -> Tensor<B, 1> {
+fn load_1d_tensor_from_candle<B: Backend>(tensor: &CandleTensor, device: &B::Device) -> Tensor<B, 1> {
   let dims = tensor.dims();
   let data = tensor.to_vec1::<f32>().unwrap();
   let array: [usize; 1] = dims.try_into().expect("Unexpected size");
   let data = Data::new(data, Shape::new(array));
-  let weight = Tensor::<B, 1>::from_floats(data);
+  let weight = Tensor::<B, 1>::from_floats(data, device);
   weight
 }
 
-fn load_2d_tensor_from_candle<B: Backend>(tensor: &CandleTensor) -> Tensor<B, 2> {
+fn load_2d_tensor_from_candle<B: Backend>(tensor: &CandleTensor, device: &B::Device) -> Tensor<B, 2> {
   let dims = tensor.dims();
   let data = tensor.to_vec2::<f32>().unwrap().into_iter().flatten().collect::<Vec<f32>>();
   let array: [usize; 2] = dims.try_into().expect("Unexpected size");
   let data = Data::new(data, Shape::new(array));
-  let weight = Tensor::<B, 2>::from_floats(data);
+  let weight = Tensor::<B, 2>::from_floats(data, device);
   weight
 } 
 
-fn load_layer_norm<B: Backend>(dir: &str) -> LayerNormRecord<B> {
+fn load_layer_norm<B: Backend>(dir: &str, device: &B::Device) -> LayerNormRecord<B> {
   let layer_norm_record = LayerNormRecord {
-    beta: load_1d_tensor::<B>(&format!("{}LayerNorm_bias.npy", dir)),
-    gamma: load_1d_tensor::<B>(&format!("{}LayerNorm_weight.npy", dir)),
+    beta: load_1d_tensor::<B>(&format!("{}LayerNorm_bias.npy", dir), device),
+    gamma: load_1d_tensor::<B>(&format!("{}LayerNorm_weight.npy", dir), device),
     epsilon: ConstantRecord::new()
   };
   layer_norm_record
 }
 
-fn load_layer_norm_safetensor<B: Backend>(bias: &CandleTensor, weight: &CandleTensor) -> LayerNormRecord<B> {
-  let beta = load_1d_tensor_from_candle::<B>(bias);
-  let gamma = load_1d_tensor_from_candle::<B>(weight);
+fn load_layer_norm_safetensor<B: Backend>(bias: &CandleTensor, weight: &CandleTensor, device: &B::Device) -> LayerNormRecord<B> {
+  let beta = load_1d_tensor_from_candle::<B>(bias, device);
+  let gamma = load_1d_tensor_from_candle::<B>(weight, device);
 
   let layer_norm_record = LayerNormRecord {
-    beta: beta.into(),
-    gamma: gamma.into(),
+    beta: Param::initialized(ParamId::new(), beta),
+    gamma: Param::initialized(ParamId::new(), gamma),
     epsilon: ConstantRecord::new()
   };
   layer_norm_record
 }
 
-fn load_linear<B: Backend>(dir: &str) -> LinearRecord<B> {
+fn load_linear<B: Backend>(dir: &str, device: &B::Device) -> LinearRecord<B> {
   let linear_record = LinearRecord {
-    weight: load_2d_tensor::<B>(&format!("{}weight.npy", dir)),
-    bias: Some(load_1d_tensor::<B>(&format!("{}bias.npy", dir))),
+    weight: load_2d_tensor::<B>(&format!("{}weight.npy", dir), device),
+    bias: Some(load_1d_tensor::<B>(&format!("{}bias.npy", dir), device)),
   };
   linear_record
 }
 
-fn load_linear_safetensor<B: Backend>(bias: &CandleTensor, weight: &CandleTensor) -> LinearRecord<B> {
-  let bias = load_1d_tensor_from_candle::<B>(bias);
-  let weight = load_2d_tensor_from_candle::<B>(weight);
+fn load_linear_safetensor<B: Backend>(bias: &CandleTensor, weight: &CandleTensor, device: &B::Device) -> LinearRecord<B> {
+  let bias = load_1d_tensor_from_candle::<B>(bias, device);
+  let weight = load_2d_tensor_from_candle::<B>(weight, device);
 
   let weight = weight.transpose();
 
   let linear_record = LinearRecord {
-    weight: weight.into(),
-    bias: Some(bias.into()),
+    weight: Param::initialized(ParamId::new(), weight),
+    bias: Some(Param::initialized(ParamId::new(), bias)),
   };
   linear_record
 }
 
-fn load_output_layer<B: Backend>(layer_dir: &str) -> BertOutputRecord<B> {
+fn load_output_layer<B: Backend>(layer_dir: &str, device: &B::Device) -> BertOutputRecord<B> {
   let output_record = BertOutputRecord {
-    dense: load_linear::<B>(&format!("{}dense/", layer_dir)),
-    layer_norm: load_layer_norm::<B>(&format!("{}", layer_dir)),
+    dense: load_linear::<B>(&format!("{}dense/", layer_dir), device),
+    layer_norm: load_layer_norm::<B>(&format!("{}", layer_dir), device),
     dropout: ConstantRecord::new()
   };
   output_record
 }
 
-fn load_output_layer_safetensor<B: Backend>(dense_weight: &CandleTensor, dense_bias: &CandleTensor, layer_norm_bias: &CandleTensor, layer_norm_weight: &CandleTensor) -> BertOutputRecord<B> {
-  let dense = load_linear_safetensor::<B>(dense_bias, dense_weight);
-  let layer_norm = load_layer_norm_safetensor::<B>(layer_norm_bias, layer_norm_weight);
+fn load_output_layer_safetensor<B: Backend>(dense_weight: &CandleTensor, dense_bias: &CandleTensor, layer_norm_bias: &CandleTensor, layer_norm_weight: &CandleTensor, device: &B::Device) -> BertOutputRecord<B> {
+  let dense = load_linear_safetensor::<B>(dense_bias, dense_weight, device);
+  let layer_norm = load_layer_norm_safetensor::<B>(layer_norm_bias, layer_norm_weight, device);
 
   let output_record = BertOutputRecord {
     dense,
@@ -157,16 +157,16 @@ fn load_output_layer_safetensor<B: Backend>(dense_weight: &CandleTensor, dense_b
   output_record
 }
 
-fn load_intermediate_layer<B: Backend>(layer_dir: &str) -> BertIntermediateRecord<B> {
+fn load_intermediate_layer<B: Backend>(layer_dir: &str, device: &B::Device) -> BertIntermediateRecord<B> {
   let intermediate_record = BertIntermediateRecord {
-    dense: load_linear::<B>(&format!("{}dense/", layer_dir)),
+    dense: load_linear::<B>(&format!("{}dense/", layer_dir), device),
     intermediate_act: ConstantRecord::new(),
   };
   intermediate_record
 }
 
-fn load_intermediate_layer_safetensor<B: Backend>(dense_weight: &CandleTensor, dense_bias: &CandleTensor) -> BertIntermediateRecord<B> {
-  let dense = load_linear_safetensor::<B>(dense_bias, dense_weight);
+fn load_intermediate_layer_safetensor<B: Backend>(dense_weight: &CandleTensor, dense_bias: &CandleTensor, device: &B::Device) -> BertIntermediateRecord<B> {
+  let dense = load_linear_safetensor::<B>(dense_bias, dense_weight, device);
 
   let intermediate_record = BertIntermediateRecord {
     dense,
@@ -176,11 +176,11 @@ fn load_intermediate_layer_safetensor<B: Backend>(dense_weight: &CandleTensor, d
   intermediate_record
 }
 
-fn load_self_attention_layer<B: Backend>(layer_dir: &str) -> BertSelfAttentionRecord<B> {
+fn load_self_attention_layer<B: Backend>(layer_dir: &str, device: &B::Device) -> BertSelfAttentionRecord<B> {
   let attention_record = BertSelfAttentionRecord {
-    query: load_linear::<B>(&format!("{}query/", layer_dir)),
-    key: load_linear::<B>(&format!("{}key/", layer_dir)),
-    value: load_linear::<B>(&format!("{}value/", layer_dir)),
+    query: load_linear::<B>(&format!("{}query/", layer_dir), device),
+    key: load_linear::<B>(&format!("{}key/", layer_dir), device),
+    value: load_linear::<B>(&format!("{}value/", layer_dir), device),
     dropout: ConstantRecord::new(),
     num_attention_heads: ConstantRecord::new(),
     attention_head_size: ConstantRecord::new(),
@@ -189,10 +189,10 @@ fn load_self_attention_layer<B: Backend>(layer_dir: &str) -> BertSelfAttentionRe
   attention_record
 }
 
-fn load_self_attention_layer_safetensor<B: Backend>(query_weight: &CandleTensor, query_bias: &CandleTensor, key_weight: &CandleTensor, key_bias: &CandleTensor, value_weight: &CandleTensor, value_bias: &CandleTensor) -> BertSelfAttentionRecord<B> {
-  let query = load_linear_safetensor::<B>(query_bias, query_weight);
-  let key = load_linear_safetensor::<B>(key_bias, key_weight);
-  let value = load_linear_safetensor::<B>(value_bias, value_weight);
+fn load_self_attention_layer_safetensor<B: Backend>(query_weight: &CandleTensor, query_bias: &CandleTensor, key_weight: &CandleTensor, key_bias: &CandleTensor, value_weight: &CandleTensor, value_bias: &CandleTensor, device: &B::Device) -> BertSelfAttentionRecord<B> {
+  let query = load_linear_safetensor::<B>(query_bias, query_weight, device);
+  let key = load_linear_safetensor::<B>(key_bias, key_weight, device);
+  let value = load_linear_safetensor::<B>(value_bias, value_weight, device);
 
   let attention_record = BertSelfAttentionRecord {
     query,
@@ -206,18 +206,18 @@ fn load_self_attention_layer_safetensor<B: Backend>(query_weight: &CandleTensor,
   attention_record
 }
 
-fn load_self_output_layer<B: Backend>(layer_dir: &str) -> BertSelfOutputRecord<B> {
+fn load_self_output_layer<B: Backend>(layer_dir: &str, device: &B::Device) -> BertSelfOutputRecord<B> {
   let output_record = BertSelfOutputRecord {
-    dense: load_linear::<B>(&format!("{}dense/", layer_dir)),
-    layer_norm: load_layer_norm::<B>(&format!("{}", layer_dir)),
+    dense: load_linear::<B>(&format!("{}dense/", layer_dir), device),
+    layer_norm: load_layer_norm::<B>(&format!("{}", layer_dir), device),
     dropout: ConstantRecord::new()
   };
   output_record
 }
 
-fn load_self_output_layer_safetensor<B: Backend>(dense_weight: &CandleTensor, dense_bias: &CandleTensor, layer_norm_bias: &CandleTensor, layer_norm_weight: &CandleTensor) -> BertSelfOutputRecord<B> {
-  let dense = load_linear_safetensor::<B>(dense_bias, dense_weight);
-  let layer_norm = load_layer_norm_safetensor::<B>(layer_norm_bias, layer_norm_weight);
+fn load_self_output_layer_safetensor<B: Backend>(dense_weight: &CandleTensor, dense_bias: &CandleTensor, layer_norm_bias: &CandleTensor, layer_norm_weight: &CandleTensor, device: &B::Device) -> BertSelfOutputRecord<B> {
+  let dense = load_linear_safetensor::<B>(dense_bias, dense_weight, device);
+  let layer_norm = load_layer_norm_safetensor::<B>(layer_norm_bias, layer_norm_weight, device);
 
   let output_record = BertSelfOutputRecord {
     dense,
@@ -227,17 +227,17 @@ fn load_self_output_layer_safetensor<B: Backend>(dense_weight: &CandleTensor, de
   output_record
 }
 
-fn load_attention_layer<B: Backend>(layer_dir: &str) -> BertAttentionRecord<B> {
+fn load_attention_layer<B: Backend>(layer_dir: &str, device: &B::Device) -> BertAttentionRecord<B> {
   let attention_record = BertAttentionRecord {
-    self_attention: load_self_attention_layer::<B>(&format!("{}self/", layer_dir)),
-    self_output: load_self_output_layer::<B>(&format!("{}output/", layer_dir)),
+    self_attention: load_self_attention_layer::<B>(&format!("{}self/", layer_dir), device),
+    self_output: load_self_output_layer::<B>(&format!("{}output/", layer_dir), device),
   };
   attention_record
 }
 
-fn load_attention_layer_safetensor<B: Backend>(attention_tensors: HashMap<String, CandleTensor>) -> BertAttentionRecord<B> {
-  let self_attention = load_self_attention_layer_safetensor::<B>(&attention_tensors["attention.self.query.weight"], &attention_tensors["attention.self.query.bias"], &attention_tensors["attention.self.key.weight"], &attention_tensors["attention.self.key.bias"], &attention_tensors["attention.self.value.weight"], &attention_tensors["attention.self.value.bias"]);
-  let self_output = load_self_output_layer_safetensor::<B>(&attention_tensors["attention.output.dense.weight"], &attention_tensors["attention.output.dense.bias"], &attention_tensors["attention.output.LayerNorm.bias"], &attention_tensors["attention.output.LayerNorm.weight"]);
+fn load_attention_layer_safetensor<B: Backend>(attention_tensors: HashMap<String, CandleTensor>, device: &B::Device) -> BertAttentionRecord<B> {
+  let self_attention = load_self_attention_layer_safetensor::<B>(&attention_tensors["attention.self.query.weight"], &attention_tensors["attention.self.query.bias"], &attention_tensors["attention.self.key.weight"], &attention_tensors["attention.self.key.bias"], &attention_tensors["attention.self.value.weight"], &attention_tensors["attention.self.value.bias"], device);
+  let self_output = load_self_output_layer_safetensor::<B>(&attention_tensors["attention.output.dense.weight"], &attention_tensors["attention.output.dense.bias"], &attention_tensors["attention.output.LayerNorm.bias"], &attention_tensors["attention.output.LayerNorm.weight"], device);
 
   let attention_record = BertAttentionRecord {
     self_attention,
@@ -246,7 +246,7 @@ fn load_attention_layer_safetensor<B: Backend>(attention_tensors: HashMap<String
   attention_record
 }
 
-fn load_encoder<B: Backend>(encoder_dir: &str) -> BertEncoderRecord<B> {
+fn load_encoder<B: Backend>(encoder_dir: &str, device: &B::Device) -> BertEncoderRecord<B> {
   // Load n_layer
   let n_layer = load_npy_scalar::<B>(&format!("{}n_layer.npy", encoder_dir));
   let num_layers = n_layer[1] as usize;
@@ -256,9 +256,9 @@ fn load_encoder<B: Backend>(encoder_dir: &str) -> BertEncoderRecord<B> {
   
   for i in 0..num_layers {
     let layer_dir = format!("{}layer{}/", encoder_dir, i);
-    let attention_layer = load_attention_layer::<B>(format!("{}attention/", layer_dir).as_str());
-    let intermediate_layer = load_intermediate_layer::<B>(format!("{}intermediate/", layer_dir).as_str());
-    let output_layer = load_output_layer::<B>(format!("{}output/", layer_dir).as_str());
+    let attention_layer = load_attention_layer::<B>(format!("{}attention/", layer_dir).as_str(), device);
+    let intermediate_layer = load_intermediate_layer::<B>(format!("{}intermediate/", layer_dir).as_str(), device);
+    let output_layer = load_output_layer::<B>(format!("{}output/", layer_dir).as_str(), device);
 
     let layer_record = BertEncoderLayerRecord {
       attention: attention_layer,
@@ -276,7 +276,7 @@ fn load_encoder<B: Backend>(encoder_dir: &str) -> BertEncoderRecord<B> {
   encoder_record
 }
 
-fn load_encoder_from_safetensors<B: Backend>(encoder_tensors: HashMap<String, CandleTensor>) -> BertEncoderRecord<B> {
+fn load_encoder_from_safetensors<B: Backend>(encoder_tensors: HashMap<String, CandleTensor>, device: &B::Device) -> BertEncoderRecord<B> {
   // Each layer in encoder_tensors has a key like encoder.layer.0, encoder.layer.1, etc.
   // We need to extract the layers in order by iterating over the tensors and extracting the layer number
   let mut layers: HashMap<usize, HashMap<String, CandleTensor>> = HashMap::new();
@@ -300,9 +300,9 @@ fn load_encoder_from_safetensors<B: Backend>(encoder_tensors: HashMap<String, Ca
     let attention_tensors = value.clone();
     // Remove the layer number from the key
     let attention_tensors = attention_tensors.iter().map(|(k, v)| (k.replace(&format!("{}.", layer_key), ""), v.clone())).collect::<HashMap<String, CandleTensor>>();
-    let attention_layer = load_attention_layer_safetensor::<B>(attention_tensors.clone());
-    let intermediate_layer = load_intermediate_layer_safetensor::<B>(&value[&format!("{}.intermediate.dense.weight", layer_key)], &value[&format!("{}.intermediate.dense.bias", layer_key)]);
-    let output_layer = load_output_layer_safetensor::<B>(&value[&format!("{}.output.dense.weight", layer_key)], &value[&format!("{}.output.dense.bias", layer_key)], &value[&format!("{}.output.LayerNorm.bias", layer_key)], &value[&format!("{}.output.LayerNorm.weight", layer_key)]);
+    let attention_layer = load_attention_layer_safetensor::<B>(attention_tensors.clone(), device);
+    let intermediate_layer = load_intermediate_layer_safetensor::<B>(&value[&format!("{}.intermediate.dense.weight", layer_key)], &value[&format!("{}.intermediate.dense.bias", layer_key)], device);
+    let output_layer = load_output_layer_safetensor::<B>(&value[&format!("{}.output.dense.weight", layer_key)], &value[&format!("{}.output.dense.bias", layer_key)], &value[&format!("{}.output.LayerNorm.bias", layer_key)], &value[&format!("{}.output.LayerNorm.weight", layer_key)], device);
 
     let layer_record = BertEncoderLayerRecord {
       attention: attention_layer,
@@ -319,29 +319,29 @@ fn load_encoder_from_safetensors<B: Backend>(encoder_tensors: HashMap<String, Ca
   encoder_record
 }
 
-fn load_embedding<B: Backend>(embedding_dir: &str) -> EmbeddingRecord<B> {
+fn load_embedding<B: Backend>(embedding_dir: &str, device: &B::Device) -> EmbeddingRecord<B> {
   let embedding = EmbeddingRecord {
-    weight: load_2d_tensor::<B>(&format!("{}weight.npy", embedding_dir)),
+    weight: load_2d_tensor::<B>(&format!("{}weight.npy", embedding_dir), device),
   };
 
   embedding
 }
 
-fn load_embedding_safetensor<B: Backend>(weight: &CandleTensor) -> EmbeddingRecord<B> {
-  let weight = load_2d_tensor_from_candle(weight);
+fn load_embedding_safetensor<B: Backend>(weight: &CandleTensor, device: &B::Device) -> EmbeddingRecord<B> {
+  let weight = load_2d_tensor_from_candle(weight, device);
 
   let embedding = EmbeddingRecord {
-    weight: weight.into()
+    weight: Param::initialized(ParamId::new(), weight)
   };
 
   embedding
 }
 
-fn load_embeddings<B: Backend>(embeddings_dir: &str) -> BertEmbeddingsRecord<B> {
-  let word_embeddings = load_embedding::<B>(&format!("{}word_embeddings/", embeddings_dir));
-  let position_embeddings = load_embedding::<B>(&format!("{}position_embeddings/", embeddings_dir));
-  let token_type_embeddings = load_embedding::<B>(&format!("{}token_type_embeddings/", embeddings_dir));
-  let layer_norm = load_layer_norm::<B>(&format!("{}", embeddings_dir));
+fn load_embeddings<B: Backend>(embeddings_dir: &str, device: &B::Device) -> BertEmbeddingsRecord<B> {
+  let word_embeddings = load_embedding::<B>(&format!("{}word_embeddings/", embeddings_dir), device);
+  let position_embeddings = load_embedding::<B>(&format!("{}position_embeddings/", embeddings_dir), device);
+  let token_type_embeddings = load_embedding::<B>(&format!("{}token_type_embeddings/", embeddings_dir), device);
+  let layer_norm = load_layer_norm::<B>(&format!("{}", embeddings_dir), device);
   let dropout = ConstantRecord::new();
 
   let embeddings_record = BertEmbeddingsRecord {
@@ -356,11 +356,11 @@ fn load_embeddings<B: Backend>(embeddings_dir: &str) -> BertEmbeddingsRecord<B> 
   embeddings_record
 }
 
-fn load_embeddings_from_safetensors<B: Backend>(embedding_tensors: HashMap<String, CandleTensor>) -> BertEmbeddingsRecord<B> {
-  let word_embeddings = load_embedding_safetensor(&embedding_tensors["embeddings.word_embeddings.weight"]);
-  let position_embeddings = load_embedding_safetensor(&embedding_tensors["embeddings.position_embeddings.weight"]);
-  let token_type_embeddings = load_embedding_safetensor(&embedding_tensors["embeddings.token_type_embeddings.weight"]);
-  let layer_norm = load_layer_norm_safetensor::<B>(&embedding_tensors["embeddings.LayerNorm.bias"], &embedding_tensors["embeddings.LayerNorm.weight"]);
+fn load_embeddings_from_safetensors<B: Backend>(embedding_tensors: HashMap<String, CandleTensor>, device: &B::Device) -> BertEmbeddingsRecord<B> {
+  let word_embeddings = load_embedding_safetensor(&embedding_tensors["embeddings.word_embeddings.weight"], device);
+  let position_embeddings = load_embedding_safetensor(&embedding_tensors["embeddings.position_embeddings.weight"], device);
+  let token_type_embeddings = load_embedding_safetensor(&embedding_tensors["embeddings.token_type_embeddings.weight"], device);
+  let layer_norm = load_layer_norm_safetensor::<B>(&embedding_tensors["embeddings.LayerNorm.bias"], &embedding_tensors["embeddings.LayerNorm.weight"], device);
   let dropout = ConstantRecord::new();
 
   let embeddings_record = BertEmbeddingsRecord {
@@ -376,8 +376,8 @@ fn load_embeddings_from_safetensors<B: Backend>(embedding_tensors: HashMap<Strin
 }
 
 pub fn load_model<B: Backend>(dir: &str, device: &B::Device, config: BertModelConfig) -> BertModel<B> {
-  let encoder_record = load_encoder::<B>(&format!("{}/encoder/", dir));
-  let embeddings_record = load_embeddings::<B>(&format!("{}/embeddings/", dir));
+  let encoder_record = load_encoder::<B>(&format!("{}/encoder/", dir), device);
+  let embeddings_record = load_embeddings::<B>(&format!("{}/embeddings/", dir), device);
 
   let model_record = BertModelRecord {
       embeddings: embeddings_record,
@@ -414,8 +414,8 @@ pub fn load_model_from_safetensors<B: Backend>(file_path: &str, device: &B::Devi
     }
   }
   
-  let embeddings_record = load_embeddings_from_safetensors::<B>(embeddings_layers);
-  let encoder_record = load_encoder_from_safetensors::<B>(encoder_layers);
+  let embeddings_record = load_embeddings_from_safetensors::<B>(embeddings_layers, device);
+  let encoder_record = load_encoder_from_safetensors::<B>(encoder_layers, device);
   let model_record = BertModelRecord {
     embeddings: embeddings_record,
     encoder: encoder_record,

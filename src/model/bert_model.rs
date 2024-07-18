@@ -32,7 +32,7 @@ pub struct BertModel<B: Backend> {
 
 impl BertModelConfig {
   /// Initializes a Bert model with default weights
-  pub fn init<B: Backend>(&self) -> BertModel<B> {
+  pub fn init<B: Backend>(&self, device: &B::Device) -> BertModel<B> {
     let embeddings = BertEmbeddingsConfig {
       vocab_size: self.vocab_size,
       max_position_embeddings: self.max_position_embeddings,
@@ -40,7 +40,7 @@ impl BertModelConfig {
       hidden_size: self.hidden_size,
       hidden_dropout_prob: self.hidden_dropout_prob,
       layer_norm_eps: self.layer_norm_eps,
-    }.init();
+    }.init(device);
     let encoder = BertEncoderConfig {
       n_heads: self.n_heads,
       n_layers: self.n_layers,
@@ -86,11 +86,11 @@ impl BertModelConfig {
 
 impl<B: Backend> BertModel<B> {
   /// Defines forward pass
-  pub fn forward(&self, input: BertEmbeddingsInferenceBatch<B>) -> Tensor<B, 3> {
+  pub fn forward(&self, input: BertEmbeddingsInferenceBatch<B>, device: &B::Device) -> Tensor<B, 3> {
     let embedding = self.embeddings.forward(input.clone());
 
     let shape = input.tokens.shape();
-    let mut mask_attn: Tensor<B, 2> = Tensor::ones(shape.clone()).to_device(&input.tokens.device());
+    let mut mask_attn: Tensor<B, 2> = Tensor::ones(shape.clone(), device).to_device(&input.tokens.device());
     if input.mask_attn.is_some() {
       mask_attn = input.mask_attn.unwrap();
     }
@@ -105,7 +105,7 @@ impl<B: Backend> BertModel<B> {
   pub fn get_extended_attention_mask(
       &self,
       attention_mask: Tensor<B, 2>,
-      input_shape: [usize; 2],
+      input_shape: [usize; 2]
   ) -> Tensor<B, 4> {
     // Handling attention_mask.dim() == 3 case:
     // If attention_mask is 3D, just expand the dimension
@@ -120,7 +120,7 @@ impl<B: Backend> BertModel<B> {
     extended_attention_mask = extended_attention_mask.reshape([input_shape[0], 1, 1, input_shape[1]]).to_device(&device.clone());
     
     let min_val = f32::MIN;
-    extended_attention_mask = (Tensor::<B, 4>::ones(extended_attention_mask.shape()).to_device(&device.clone()).sub(extended_attention_mask)).mul_scalar(min_val);
+    extended_attention_mask = (Tensor::<B, 4>::ones(extended_attention_mask.shape(), &device).to_device(&device.clone()).sub(extended_attention_mask)).mul_scalar(min_val);
     extended_attention_mask
   }
 }

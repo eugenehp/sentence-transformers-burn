@@ -2,7 +2,7 @@ use burn::{
     config::Config,
     module::Module,
     nn::{
-        Dropout, DropoutConfig, LayerNorm, LayerNormConfig, Linear, LinearConfig, GELU
+        Dropout, DropoutConfig, LayerNorm, LayerNormConfig, Linear, LinearConfig, Gelu
     },
     tensor::{backend::Backend, Tensor, activation},
 };
@@ -44,9 +44,9 @@ impl<B: Backend> BertEncoderInput<B> {
 }
 
 impl BertEncoderConfig {
-  pub fn init<B: Backend>(&self) -> BertEncoder<B> {
+  pub fn init<B: Backend>(&self, device: &B::Device) -> BertEncoder<B> {
       let layers = (0..self.n_layers)
-          .map(|_| BertEncoderLayer::new(self))
+          .map(|_| BertEncoderLayer::new(self, device))
           .collect::<Vec<_>>();
 
       BertEncoder { layers }
@@ -89,24 +89,24 @@ pub struct BertEncoderLayer<B: Backend> {
 
 // Constructor and other methods for BertEncoderLayer
 impl<B: Backend> BertEncoderLayer<B> {
-  pub fn new(config: &BertEncoderConfig) -> Self {
+  pub fn new(config: &BertEncoderConfig, device: &B::Device) -> Self {
     let attention = BertAttentionConfig {
       hidden_size: config.hidden_size,
       num_attention_heads: config.n_heads,
       attention_head_size: config.hidden_size / config.n_heads,
       layer_norm_eps: config.layer_norm_eps,
       hidden_dropout_prob: config.dropout,
-    }.init();
+    }.init(device);
     let intermediate = BertIntermediateConfig {
       hidden_size: config.hidden_size,
       intermediate_size: config.intermediate_size,
-    }.init();
+    }.init(device);
     let output = BertOutputConfig {
       intermediate_size: config.intermediate_size,
       hidden_size: config.hidden_size,
       layer_norm_eps: config.layer_norm_eps,
       hidden_dropout_prob: config.dropout,
-    }.init();
+    }.init(device);
 
     BertEncoderLayer {
       attention,
@@ -167,18 +167,18 @@ pub struct BertAttention<B: Backend> {
 }
 
 impl BertAttentionConfig {
-  pub fn init<B: Backend>(&self) -> BertAttention<B> {
+  pub fn init<B: Backend>(&self, device: &B::Device) -> BertAttention<B> {
     let self_attention = BertSelfAttentionConfig { 
       hidden_size: self.hidden_size,
       num_attention_heads: self.num_attention_heads,
       attention_head_size: self.attention_head_size,
       hidden_dropout_prob: self.hidden_dropout_prob,
-    }.init();
+    }.init(device);
     let self_output = BertSelfOutputConfig {
       hidden_size: self.hidden_size,
       layer_norm_eps: self.layer_norm_eps,
       hidden_dropout_prob: self.hidden_dropout_prob,
-     }.init();
+     }.init(device);
 
     BertAttention {
       self_attention,
@@ -224,13 +224,13 @@ pub struct BertIntermediateConfig {
 #[derive(Module, Debug)]
 pub struct BertIntermediate<B: Backend> {
   dense: Linear<B>,
-  intermediate_act: GELU,
+  intermediate_act: Gelu,
 }
 
 impl BertIntermediateConfig {
-    pub fn init<B: Backend>(&self) -> BertIntermediate<B> {
-      let dense = LinearConfig::new(self.hidden_size, self.intermediate_size).init();
-      let intermediate_act = GELU::new(); // TODO: Change this to HiddenActLayer::new(self.hidden_act) to allow RELU
+    pub fn init<B: Backend>(&self, device: &B::Device) -> BertIntermediate<B> {
+      let dense = LinearConfig::new(self.hidden_size, self.intermediate_size).init(device);
+      let intermediate_act = Gelu::new(); // TODO: Change this to HiddenActLayer::new(self.hidden_act) to allow RELU
 
       BertIntermediate { 
         dense,
@@ -240,7 +240,7 @@ impl BertIntermediateConfig {
 
     pub fn init_with<B: Backend>(&self, record: BertIntermediateRecord<B>) -> BertIntermediate<B> {
       let dense = LinearConfig::new(self.hidden_size, self.intermediate_size).init_with(record.dense);
-      let intermediate_act = GELU::new();
+      let intermediate_act = Gelu::new();
 
       BertIntermediate { 
         dense,
@@ -273,11 +273,11 @@ pub struct BertOutput<B: Backend> {
 }
 
 impl BertOutputConfig {
-    pub fn init<B: Backend>(&self) -> BertOutput<B> {
-      let dense = LinearConfig::new(self.intermediate_size, self.hidden_size).init();
+    pub fn init<B: Backend>(&self, device: &B::Device) -> BertOutput<B> {
+      let dense = LinearConfig::new(self.intermediate_size, self.hidden_size).init(device);
       let layer_norm_config = LayerNormConfig::new(self.hidden_size);
       let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-      let layer_norm = layer_norm_config.init();
+      let layer_norm = layer_norm_config.init(device);
 
       let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
@@ -335,11 +335,11 @@ pub struct BertSelfAttention<B: Backend> {
 }
 
 impl BertSelfAttentionConfig {
-    pub fn init<B: Backend>(&self) -> BertSelfAttention<B> {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> BertSelfAttention<B> {
         let all_head_size = self.num_attention_heads * self.attention_head_size;
-        let query = LinearConfig::new(self.hidden_size, all_head_size).init();
-        let key = LinearConfig::new(self.hidden_size, all_head_size).init();
-        let value = LinearConfig::new(self.hidden_size, all_head_size).init();
+        let query = LinearConfig::new(self.hidden_size, all_head_size).init(device);
+        let key = LinearConfig::new(self.hidden_size, all_head_size).init(device);
+        let value = LinearConfig::new(self.hidden_size, all_head_size).init(device);
         let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
         BertSelfAttention {
@@ -426,11 +426,11 @@ pub struct BertSelfOutput<B: Backend> {
 }
 
 impl BertSelfOutputConfig {
-  pub fn init<B: Backend>(&self) -> BertSelfOutput<B> {
-    let dense = LinearConfig::new(self.hidden_size, self.hidden_size).init();
+  pub fn init<B: Backend>(&self, device: &B::Device) -> BertSelfOutput<B> {
+    let dense = LinearConfig::new(self.hidden_size, self.hidden_size).init(device);
     let layer_norm_config = LayerNormConfig::new(self.hidden_size);
     let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-    let layer_norm = layer_norm_config.init();
+    let layer_norm = layer_norm_config.init(device);
 
     let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
