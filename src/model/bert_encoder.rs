@@ -1,10 +1,8 @@
 use burn::{
     config::Config,
     module::Module,
-    nn::{
-        Dropout, DropoutConfig, LayerNorm, LayerNormConfig, Linear, LinearConfig, Gelu
-    },
-    tensor::{backend::Backend, Tensor, activation},
+    nn::{Dropout, DropoutConfig, Gelu, LayerNorm, LayerNormConfig, Linear, LinearConfig},
+    tensor::{activation, backend::Backend, Tensor},
 };
 use libm::sqrtf;
 
@@ -36,284 +34,312 @@ pub struct BertEncoderInput<B: Backend> {
 
 impl<B: Backend> BertEncoderInput<B> {
     pub fn new(tensor: Tensor<B, 3>, mask_attn: Tensor<B, 4>) -> Self {
-        Self {
-            tensor,
-            mask_attn,
-        }
+        Self { tensor, mask_attn }
     }
 }
 
 impl BertEncoderConfig {
-  pub fn init<B: Backend>(&self, device: &B::Device) -> BertEncoder<B> {
-      let layers = (0..self.n_layers)
-          .map(|_| BertEncoderLayer::new(self, device))
-          .collect::<Vec<_>>();
+    pub fn init<B: Backend>(&self, device: &B::Device) -> BertEncoder<B> {
+        let layers = (0..self.n_layers)
+            .map(|_| BertEncoderLayer::new(self, device))
+            .collect::<Vec<_>>();
 
-      BertEncoder { layers }
-  }
-  
-  pub fn init_with<B: Backend>(
-      &self,
-      record: BertEncoderRecord<B>,
-      device: &B::Device
-  ) -> BertEncoder<B> {
-      BertEncoder {
-          layers: record
-              .layers
-              .into_iter()
-              .map(|record| BertEncoderLayer::new_with(self, record, device))
-              .collect(),
-      }
-  }
+        BertEncoder { layers }
+    }
+
+    pub fn init_with<B: Backend>(
+        &self,
+        record: BertEncoderRecord<B>,
+        device: &B::Device,
+    ) -> BertEncoder<B> {
+        BertEncoder {
+            layers: record
+                .layers
+                .into_iter()
+                .map(|record| BertEncoderLayer::new_with(self, record, device))
+                .collect(),
+        }
+    }
 }
 
 impl<B: Backend> BertEncoder<B> {
-  pub fn forward(&self, input: BertEncoderInput<B>) -> Tensor<B, 3> {
-      let mut x = input.tensor;
-      let mask_attn = input.mask_attn;
+    pub fn forward(&self, input: BertEncoderInput<B>) -> Tensor<B, 3> {
+        let mut x = input.tensor;
+        let mask_attn = input.mask_attn;
 
-      for layer in self.layers.iter() {
-          x = layer.forward(x, mask_attn.clone());
-      }
+        for layer in self.layers.iter() {
+            x = layer.forward(x, mask_attn.clone());
+        }
 
-      x
-  }
+        x
+    }
 }
 
 // Define the structure of BertEncoderLayer
 #[derive(Debug, Module)]
 pub struct BertEncoderLayer<B: Backend> {
-  pub attention: BertAttention<B>,
-  intermediate: BertIntermediate<B>,
-  output: BertOutput<B>,
+    pub attention: BertAttention<B>,
+    intermediate: BertIntermediate<B>,
+    output: BertOutput<B>,
 }
 
 // Constructor and other methods for BertEncoderLayer
 impl<B: Backend> BertEncoderLayer<B> {
-  pub fn new(config: &BertEncoderConfig, device: &B::Device) -> Self {
-    let attention = BertAttentionConfig {
-      hidden_size: config.hidden_size,
-      num_attention_heads: config.n_heads,
-      attention_head_size: config.hidden_size / config.n_heads,
-      layer_norm_eps: config.layer_norm_eps,
-      hidden_dropout_prob: config.dropout,
-    }.init(device);
-    let intermediate = BertIntermediateConfig {
-      hidden_size: config.hidden_size,
-      intermediate_size: config.intermediate_size,
-    }.init(device);
-    let output = BertOutputConfig {
-      intermediate_size: config.intermediate_size,
-      hidden_size: config.hidden_size,
-      layer_norm_eps: config.layer_norm_eps,
-      hidden_dropout_prob: config.dropout,
-    }.init(device);
+    pub fn new(config: &BertEncoderConfig, device: &B::Device) -> Self {
+        let attention = BertAttentionConfig {
+            hidden_size: config.hidden_size,
+            num_attention_heads: config.n_heads,
+            attention_head_size: config.hidden_size / config.n_heads,
+            layer_norm_eps: config.layer_norm_eps,
+            hidden_dropout_prob: config.dropout,
+        }
+        .init(device);
+        let intermediate = BertIntermediateConfig {
+            hidden_size: config.hidden_size,
+            intermediate_size: config.intermediate_size,
+        }
+        .init(device);
+        let output = BertOutputConfig {
+            intermediate_size: config.intermediate_size,
+            hidden_size: config.hidden_size,
+            layer_norm_eps: config.layer_norm_eps,
+            hidden_dropout_prob: config.dropout,
+        }
+        .init(device);
 
-    BertEncoderLayer {
-      attention,
-      intermediate,
-      output,
+        BertEncoderLayer {
+            attention,
+            intermediate,
+            output,
+        }
     }
-  }
 
-  pub fn new_with(config: &BertEncoderConfig, record: BertEncoderLayerRecord<B>, device: &B::Device) -> Self {
-    let attention = BertAttentionConfig {
-      hidden_size: config.hidden_size,
-      num_attention_heads: config.n_heads,
-      attention_head_size: config.hidden_size / config.n_heads,
-      layer_norm_eps: config.layer_norm_eps,
-      hidden_dropout_prob: config.dropout,
-    }.init_with(record.attention, device);
-    let intermediate = BertIntermediateConfig {
-      hidden_size: config.hidden_size,
-      intermediate_size: config.intermediate_size,
-    }.init_with(record.intermediate, device);
-    let output = BertOutputConfig {
-      intermediate_size: config.intermediate_size,
-      hidden_size: config.hidden_size,
-      layer_norm_eps: config.layer_norm_eps,
-      hidden_dropout_prob: config.dropout,
-    }.init_with(record.output, device);
+    pub fn new_with(
+        config: &BertEncoderConfig,
+        record: BertEncoderLayerRecord<B>,
+        device: &B::Device,
+    ) -> Self {
+        let attention = BertAttentionConfig {
+            hidden_size: config.hidden_size,
+            num_attention_heads: config.n_heads,
+            attention_head_size: config.hidden_size / config.n_heads,
+            layer_norm_eps: config.layer_norm_eps,
+            hidden_dropout_prob: config.dropout,
+        }
+        .init_with(record.attention, device);
+        let intermediate = BertIntermediateConfig {
+            hidden_size: config.hidden_size,
+            intermediate_size: config.intermediate_size,
+        }
+        .init_with(record.intermediate, device);
+        let output = BertOutputConfig {
+            intermediate_size: config.intermediate_size,
+            hidden_size: config.hidden_size,
+            layer_norm_eps: config.layer_norm_eps,
+            hidden_dropout_prob: config.dropout,
+        }
+        .init_with(record.output, device);
 
-    BertEncoderLayer {
-      attention,
-      intermediate,
-      output,
+        BertEncoderLayer {
+            attention,
+            intermediate,
+            output,
+        }
     }
-  }
 
-  pub fn forward(&self, x: Tensor<B, 3>, mask_attn: Tensor<B, 4>) -> Tensor<B, 3> {
-      let attention_output = self.attention.forward(x, mask_attn);
-      let intermediate_output = self.intermediate.forward(attention_output.clone());
-      self.output.forward(intermediate_output, attention_output)
-  }
+    pub fn forward(&self, x: Tensor<B, 3>, mask_attn: Tensor<B, 4>) -> Tensor<B, 3> {
+        let attention_output = self.attention.forward(x, mask_attn);
+        let intermediate_output = self.intermediate.forward(attention_output.clone());
+        self.output.forward(intermediate_output, attention_output)
+    }
 }
-
-
 
 // BertAttention Configuration and Module
 #[derive(Config, Debug)]
 pub struct BertAttentionConfig {
-  pub hidden_size: usize,         // Dimension of the input
-  pub num_attention_heads: usize,     // Number of attention heads
-  pub attention_head_size: usize, // Size of each attention head
-  pub layer_norm_eps: f64,
-  pub hidden_dropout_prob: f64,
+    pub hidden_size: usize,         // Dimension of the input
+    pub num_attention_heads: usize, // Number of attention heads
+    pub attention_head_size: usize, // Size of each attention head
+    pub layer_norm_eps: f64,
+    pub hidden_dropout_prob: f64,
 }
 
 #[derive(Module, Debug)]
 pub struct BertAttention<B: Backend> {
-  pub self_attention: BertSelfAttention<B>,
-  self_output: BertSelfOutput<B>,
+    pub self_attention: BertSelfAttention<B>,
+    self_output: BertSelfOutput<B>,
 }
 
 impl BertAttentionConfig {
-  pub fn init<B: Backend>(&self, device: &B::Device) -> BertAttention<B> {
-    let self_attention = BertSelfAttentionConfig { 
-      hidden_size: self.hidden_size,
-      num_attention_heads: self.num_attention_heads,
-      attention_head_size: self.attention_head_size,
-      hidden_dropout_prob: self.hidden_dropout_prob,
-    }.init(device);
-    let self_output = BertSelfOutputConfig {
-      hidden_size: self.hidden_size,
-      layer_norm_eps: self.layer_norm_eps,
-      hidden_dropout_prob: self.hidden_dropout_prob,
-     }.init(device);
+    pub fn init<B: Backend>(&self, device: &B::Device) -> BertAttention<B> {
+        let self_attention = BertSelfAttentionConfig {
+            hidden_size: self.hidden_size,
+            num_attention_heads: self.num_attention_heads,
+            attention_head_size: self.attention_head_size,
+            hidden_dropout_prob: self.hidden_dropout_prob,
+        }
+        .init(device);
+        let self_output = BertSelfOutputConfig {
+            hidden_size: self.hidden_size,
+            layer_norm_eps: self.layer_norm_eps,
+            hidden_dropout_prob: self.hidden_dropout_prob,
+        }
+        .init(device);
 
-    BertAttention {
-      self_attention,
-      self_output,
+        BertAttention {
+            self_attention,
+            self_output,
+        }
     }
-  }
 
-  pub fn init_with<B: Backend>(&self, record: BertAttentionRecord<B>, device: &B::Device) -> BertAttention<B> {
-    let self_attention = BertSelfAttentionConfig { 
-      hidden_size: self.hidden_size,
-      num_attention_heads: self.num_attention_heads,
-      attention_head_size: self.attention_head_size,
-      hidden_dropout_prob: self.hidden_dropout_prob,
-    }.init_with(record.self_attention, device);
-    let self_output = BertSelfOutputConfig {
-      hidden_size: self.hidden_size,
-      layer_norm_eps: self.layer_norm_eps,
-      hidden_dropout_prob: self.hidden_dropout_prob,
-    }.init_with(record.self_output, device);
+    pub fn init_with<B: Backend>(
+        &self,
+        record: BertAttentionRecord<B>,
+        device: &B::Device,
+    ) -> BertAttention<B> {
+        let self_attention = BertSelfAttentionConfig {
+            hidden_size: self.hidden_size,
+            num_attention_heads: self.num_attention_heads,
+            attention_head_size: self.attention_head_size,
+            hidden_dropout_prob: self.hidden_dropout_prob,
+        }
+        .init_with(record.self_attention, device);
+        let self_output = BertSelfOutputConfig {
+            hidden_size: self.hidden_size,
+            layer_norm_eps: self.layer_norm_eps,
+            hidden_dropout_prob: self.hidden_dropout_prob,
+        }
+        .init_with(record.self_output, device);
 
-    BertAttention {
-      self_attention,
-      self_output,
+        BertAttention {
+            self_attention,
+            self_output,
+        }
     }
-  }
 }
 
 impl<B: Backend> BertAttention<B> {
-  pub fn forward(&self, hidden_states: Tensor<B, 3>, mask_attn: Tensor<B, 4>) -> Tensor<B, 3> {
-    let self_outputs = self.self_attention.forward(hidden_states.clone(), mask_attn);
-    let attention_output = self.self_output.forward(self_outputs, hidden_states);
-    attention_output
-  }
+    pub fn forward(&self, hidden_states: Tensor<B, 3>, mask_attn: Tensor<B, 4>) -> Tensor<B, 3> {
+        let self_outputs = self
+            .self_attention
+            .forward(hidden_states.clone(), mask_attn);
+        let attention_output = self.self_output.forward(self_outputs, hidden_states);
+        attention_output
+    }
 }
 
 // BertIntermediate Configuration and Module
 #[derive(Config, Debug)]
 pub struct BertIntermediateConfig {
-  pub hidden_size: usize,
-  pub intermediate_size: usize,
+    pub hidden_size: usize,
+    pub intermediate_size: usize,
 }
 
 #[derive(Module, Debug)]
 pub struct BertIntermediate<B: Backend> {
-  dense: Linear<B>,
-  intermediate_act: Gelu,
+    dense: Linear<B>,
+    intermediate_act: Gelu,
 }
 
 impl BertIntermediateConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> BertIntermediate<B> {
-      let dense = LinearConfig::new(self.hidden_size, self.intermediate_size).init(device);
-      let intermediate_act = Gelu::new(); // TODO: Change this to HiddenActLayer::new(self.hidden_act) to allow RELU
+        let dense = LinearConfig::new(self.hidden_size, self.intermediate_size).init(device);
+        let intermediate_act = Gelu::new(); // TODO: Change this to HiddenActLayer::new(self.hidden_act) to allow RELU
 
-      BertIntermediate { 
-        dense,
-        intermediate_act,
-      }
+        BertIntermediate {
+            dense,
+            intermediate_act,
+        }
     }
 
-    pub fn init_with<B: Backend>(&self, record: BertIntermediateRecord<B>, device: &B::Device) -> BertIntermediate<B> {
-      let dense = LinearConfig::new(self.hidden_size, self.intermediate_size).init(device).load_record(record.dense);
-      let intermediate_act = Gelu::new();
+    pub fn init_with<B: Backend>(
+        &self,
+        record: BertIntermediateRecord<B>,
+        device: &B::Device,
+    ) -> BertIntermediate<B> {
+        let dense = LinearConfig::new(self.hidden_size, self.intermediate_size)
+            .init(device)
+            .load_record(record.dense);
+        let intermediate_act = Gelu::new();
 
-      BertIntermediate { 
-        dense,
-        intermediate_act,
-      }
+        BertIntermediate {
+            dense,
+            intermediate_act,
+        }
     }
 }
 
 impl<B: Backend> BertIntermediate<B> {
-  pub fn forward(&self, hidden_states: Tensor<B, 3>) -> Tensor<B, 3> {
-    let hidden_states = self.dense.forward(hidden_states);
-    self.intermediate_act.forward(hidden_states)
-  }
+    pub fn forward(&self, hidden_states: Tensor<B, 3>) -> Tensor<B, 3> {
+        let hidden_states = self.dense.forward(hidden_states);
+        self.intermediate_act.forward(hidden_states)
+    }
 }
 
 // BertOutput Configuration and Module
 #[derive(Config, Debug)]
 pub struct BertOutputConfig {
-  pub intermediate_size: usize,
-  pub hidden_size: usize,
-  pub layer_norm_eps: f64,
-  pub hidden_dropout_prob: f64,
+    pub intermediate_size: usize,
+    pub hidden_size: usize,
+    pub layer_norm_eps: f64,
+    pub hidden_dropout_prob: f64,
 }
 
 #[derive(Module, Debug)]
 pub struct BertOutput<B: Backend> {
-  dense: Linear<B>,
-  layer_norm: LayerNorm<B>,
-  dropout: Dropout,
+    dense: Linear<B>,
+    layer_norm: LayerNorm<B>,
+    dropout: Dropout,
 }
 
 impl BertOutputConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> BertOutput<B> {
-      let dense = LinearConfig::new(self.intermediate_size, self.hidden_size).init(device);
-      let layer_norm_config = LayerNormConfig::new(self.hidden_size);
-      let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-      let layer_norm = layer_norm_config.init(device);
+        let dense = LinearConfig::new(self.intermediate_size, self.hidden_size).init(device);
+        let layer_norm_config = LayerNormConfig::new(self.hidden_size);
+        let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
+        let layer_norm = layer_norm_config.init(device);
 
-      let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
+        let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
-      BertOutput {
-          dense,
-          layer_norm,
-          dropout,
-      }
+        BertOutput {
+            dense,
+            layer_norm,
+            dropout,
+        }
     }
 
-    pub fn init_with<B: Backend>(&self, record: BertOutputRecord<B>, device: &B::Device) -> BertOutput<B> {
-      let dense = LinearConfig::new(self.intermediate_size, self.hidden_size).init(device).load_record(record.dense);
-      let layer_norm_config = LayerNormConfig::new(self.hidden_size);
-      let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-      let layer_norm = layer_norm_config.init(device).load_record(record.layer_norm);
-      
-      let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
+    pub fn init_with<B: Backend>(
+        &self,
+        record: BertOutputRecord<B>,
+        device: &B::Device,
+    ) -> BertOutput<B> {
+        let dense = LinearConfig::new(self.intermediate_size, self.hidden_size)
+            .init(device)
+            .load_record(record.dense);
+        let layer_norm_config = LayerNormConfig::new(self.hidden_size);
+        let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
+        let layer_norm = layer_norm_config
+            .init(device)
+            .load_record(record.layer_norm);
 
-      BertOutput {
-          dense,
-          layer_norm,
-          dropout,
-      }
+        let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
+
+        BertOutput {
+            dense,
+            layer_norm,
+            dropout,
+        }
     }
 }
 
 impl<B: Backend> BertOutput<B> {
-  pub fn forward(&self, hidden_states: Tensor<B, 3>, input_tensor: Tensor<B, 3>) -> Tensor<B, 3> {
-    let hidden_states = self.dense.forward(hidden_states);
-    let hidden_states = self.dropout.forward(hidden_states);
-    let result = self.layer_norm.forward(hidden_states + input_tensor);
-    result
-  }
+    pub fn forward(&self, hidden_states: Tensor<B, 3>, input_tensor: Tensor<B, 3>) -> Tensor<B, 3> {
+        let hidden_states = self.dense.forward(hidden_states);
+        let hidden_states = self.dropout.forward(hidden_states);
+        let result = self.layer_norm.forward(hidden_states + input_tensor);
+        result
+    }
 }
-
 
 // Configuration for BertSelfAttention
 #[derive(Config, Debug)]
@@ -354,11 +380,21 @@ impl BertSelfAttentionConfig {
         }
     }
 
-    pub fn init_with<B: Backend>(&self, record: BertSelfAttentionRecord<B>, device: &B::Device) -> BertSelfAttention<B> {
+    pub fn init_with<B: Backend>(
+        &self,
+        record: BertSelfAttentionRecord<B>,
+        device: &B::Device,
+    ) -> BertSelfAttention<B> {
         let all_head_size = self.num_attention_heads * self.attention_head_size;
-        let query = LinearConfig::new(self.hidden_size, all_head_size).init(device).load_record(record.query);
-        let key = LinearConfig::new(self.hidden_size, all_head_size).init(device).load_record(record.key);
-        let value = LinearConfig::new(self.hidden_size, all_head_size).init(device).load_record(record.value);
+        let query = LinearConfig::new(self.hidden_size, all_head_size)
+            .init(device)
+            .load_record(record.query);
+        let key = LinearConfig::new(self.hidden_size, all_head_size)
+            .init(device)
+            .load_record(record.key);
+        let value = LinearConfig::new(self.hidden_size, all_head_size)
+            .init(device)
+            .load_record(record.value);
         let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
         BertSelfAttention {
@@ -374,41 +410,44 @@ impl BertSelfAttentionConfig {
 }
 
 impl<B: Backend> BertSelfAttention<B> {
-  pub fn forward(&self, hidden_states: Tensor<B, 3>, mask_attn: Tensor<B, 4>) -> Tensor<B, 3> {
-    let query_layer = self.query.forward(hidden_states.clone());
-    let key_layer = self.key.forward(hidden_states.clone());
-    let value_layer = self.value.forward(hidden_states.clone());
+    pub fn forward(&self, hidden_states: Tensor<B, 3>, mask_attn: Tensor<B, 4>) -> Tensor<B, 3> {
+        let query_layer = self.query.forward(hidden_states.clone());
+        let key_layer = self.key.forward(hidden_states.clone());
+        let value_layer = self.value.forward(hidden_states.clone());
 
-    let query_layer = self.transpose_for_scores(&query_layer);
-    let key_layer = self.transpose_for_scores(&key_layer);
-    let value_layer = self.transpose_for_scores(&value_layer);
+        let query_layer = self.transpose_for_scores(&query_layer);
+        let key_layer = self.transpose_for_scores(&key_layer);
+        let value_layer = self.transpose_for_scores(&value_layer);
 
-    let attention_scores = query_layer.clone().matmul(key_layer.swap_dims(2, 3)).div_scalar(sqrtf(self.attention_head_size as f32));
-    let attention_scores = attention_scores + mask_attn;
-    let attention_probs = activation::softmax(attention_scores, 3);
-    let attention_probs = self.dropout.forward(attention_probs);
+        let attention_scores = query_layer
+            .clone()
+            .matmul(key_layer.swap_dims(2, 3))
+            .div_scalar(sqrtf(self.attention_head_size as f32));
+        let attention_scores = attention_scores + mask_attn;
+        let attention_probs = activation::softmax(attention_scores, 3);
+        let attention_probs = self.dropout.forward(attention_probs);
 
-    let context_layer = attention_probs.matmul(value_layer);
-    let context_layer = context_layer.swap_dims(1, 2).flatten(2, 3);
+        let context_layer = attention_probs.matmul(value_layer);
+        let context_layer = context_layer.swap_dims(1, 2).flatten(2, 3);
 
-    context_layer
-  }
+        context_layer
+    }
 
-  fn transpose_for_scores(&self, xs: &Tensor<B, 3>) -> Tensor<B, 4> {
-    let mut new_x_shape = xs.dims().to_vec();
-    new_x_shape.pop();
-    new_x_shape.push(self.num_attention_heads);
-    new_x_shape.push(self.attention_head_size);
+    fn transpose_for_scores(&self, xs: &Tensor<B, 3>) -> Tensor<B, 4> {
+        let mut new_x_shape = xs.dims().to_vec();
+        new_x_shape.pop();
+        new_x_shape.push(self.num_attention_heads);
+        new_x_shape.push(self.attention_head_size);
 
-    // Convert vector to an array of size 4
-    let array_shape: [usize; 4] = match new_x_shape.as_slice() {
-      &[a, b, c, d] => [a, b, c, d],
-      c => panic!("Unexpected tensor dimensions {:?}", c),
-    };
+        // Convert vector to an array of size 4
+        let array_shape: [usize; 4] = match new_x_shape.as_slice() {
+            &[a, b, c, d] => [a, b, c, d],
+            c => panic!("Unexpected tensor dimensions {:?}", c),
+        };
 
-    let xs = xs.clone().reshape(array_shape).swap_dims(1, 2);
-    xs
-  }
+        let xs = xs.clone().reshape(array_shape).swap_dims(1, 2);
+        xs
+    }
 }
 
 // Configuration for BertSelfOutput
@@ -427,42 +466,50 @@ pub struct BertSelfOutput<B: Backend> {
 }
 
 impl BertSelfOutputConfig {
-  pub fn init<B: Backend>(&self, device: &B::Device) -> BertSelfOutput<B> {
-    let dense = LinearConfig::new(self.hidden_size, self.hidden_size).init(device);
-    let layer_norm_config = LayerNormConfig::new(self.hidden_size);
-    let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-    let layer_norm = layer_norm_config.init(device);
+    pub fn init<B: Backend>(&self, device: &B::Device) -> BertSelfOutput<B> {
+        let dense = LinearConfig::new(self.hidden_size, self.hidden_size).init(device);
+        let layer_norm_config = LayerNormConfig::new(self.hidden_size);
+        let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
+        let layer_norm = layer_norm_config.init(device);
 
-    let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
+        let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
-    BertSelfOutput {
-        dense,
-        layer_norm,
-        dropout,
+        BertSelfOutput {
+            dense,
+            layer_norm,
+            dropout,
+        }
     }
-  }
 
-  pub fn init_with<B: Backend>(&self, record: BertSelfOutputRecord<B>, device: &B::Device) -> BertSelfOutput<B> {
-    let dense = LinearConfig::new(self.hidden_size, self.hidden_size).init(device).load_record(record.dense);
-    let layer_norm_config = LayerNormConfig::new(self.hidden_size);
-    let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-    let layer_norm = layer_norm_config.init(device).load_record(record.layer_norm);
-    
-    let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
+    pub fn init_with<B: Backend>(
+        &self,
+        record: BertSelfOutputRecord<B>,
+        device: &B::Device,
+    ) -> BertSelfOutput<B> {
+        let dense = LinearConfig::new(self.hidden_size, self.hidden_size)
+            .init(device)
+            .load_record(record.dense);
+        let layer_norm_config = LayerNormConfig::new(self.hidden_size);
+        let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
+        let layer_norm = layer_norm_config
+            .init(device)
+            .load_record(record.layer_norm);
 
-    BertSelfOutput {
-        dense,
-        layer_norm,
-        dropout,
+        let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
+
+        BertSelfOutput {
+            dense,
+            layer_norm,
+            dropout,
+        }
     }
-  }
 }
 
 impl<B: Backend> BertSelfOutput<B> {
-  pub fn forward(&self, hidden_states: Tensor<B, 3>, input_tensor: Tensor<B, 3>) -> Tensor<B, 3> {
-    let hidden_states = self.dense.forward(hidden_states);
-    let hidden_states = self.dropout.forward(hidden_states);
-    let result = self.layer_norm.forward(hidden_states + input_tensor);
-    result
-  }
+    pub fn forward(&self, hidden_states: Tensor<B, 3>, input_tensor: Tensor<B, 3>) -> Tensor<B, 3> {
+        let hidden_states = self.dense.forward(hidden_states);
+        let hidden_states = self.dropout.forward(hidden_states);
+        let result = self.layer_norm.forward(hidden_states + input_tensor);
+        result
+    }
 }
