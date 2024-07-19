@@ -3,10 +3,14 @@ extern crate sentence_transformers;
 use sentence_transformers::bert_loader::{load_model, load_model_from_safetensors, load_config_from_json};
 use sentence_transformers::model::bert_embeddings::BertEmbeddingsInferenceBatch;
 use sentence_transformers::model::bert_model::BertModel;
-use burn_tch::{TchDevice, TchBackend};
 use burn::tensor::{Tensor, Shape};
 use npy::NpyData;
 use std::io::Read;
+
+use burn::backend::Wgpu;
+
+// Type alias for the backend to use.
+type Backend = Wgpu;
 
 fn setup() -> String {
     // Get the current directory
@@ -31,13 +35,14 @@ fn setup() -> String {
 #[test]
 fn compare_dump_model_outputs() {
   let path = setup();
-  let device = TchDevice::Cpu;
+  // let device = TchDevice::Cpu;
+  let device = Default::default();
   let config = load_config_from_json(&format!("{}/model/bert_config.json", path));
 
-  let model: BertModel<TchBackend<f32>> = load_model((path.clone() + "/model").as_str(), &device, config);
+  let model: BertModel<Backend> = load_model((path.clone() + "/model").as_str(), &device, config);
 
-  let input_ids: Tensor<TchBackend<f32>, 1> = Tensor::from_floats([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]).to_device(&device.clone());
-  let attn_mask: Tensor<TchBackend<f32>, 1> = Tensor::from_floats([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).to_device(&device.clone());
+  let input_ids: Tensor<Backend, 1> = Tensor::from_floats([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0], &device);
+  let attn_mask: Tensor<Backend, 1> = Tensor::from_floats([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], &device);
   let input_ids = input_ids.int().reshape(Shape::new([1, 10])); 
   let attn_mask = attn_mask.reshape(Shape::new([1, 10]));
 
@@ -49,7 +54,7 @@ fn compare_dump_model_outputs() {
     mask_attn: Some(attn_mask),
   };
 
-  let output = model.forward(input);
+  let output = model.forward(input, &device);
   let output_vec: Vec<f32> = output.to_data().value.to_vec();
 
   // Compare with outputs from outputs/ directory
@@ -73,13 +78,14 @@ fn compare_dump_model_outputs() {
 #[test]
 fn compare_safetensors_model_outputs() {
   let path = setup();
-  let device = TchDevice::Cpu;
+  // let device = TchDevice::Cpu;
+  let device = Default::default();
   let config = load_config_from_json(&format!("{}/model/bert_config.json", path));
 
-  let model: BertModel<TchBackend<f32>> = load_model_from_safetensors::<TchBackend<f32>>((path.clone() + "/model/bert_model.safetensors").as_str(), &device, config.clone());
+  let model: BertModel<Backend> = load_model_from_safetensors::<Backend>((path.clone() + "/model/bert_model.safetensors").as_str(), &device, config.clone());
   
-  let input_ids: Tensor<TchBackend<f32>, 1> = Tensor::from_floats([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]).to_device(&device.clone());
-  let attn_mask: Tensor<TchBackend<f32>, 1> = Tensor::from_floats([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).to_device(&device.clone());
+  let input_ids: Tensor<Backend, 1> = Tensor::from_floats([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0], &device);
+  let attn_mask: Tensor<Backend, 1> = Tensor::from_floats([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], &device);
   let input_ids = input_ids.int().reshape(Shape::new([1, 10])); 
   let attn_mask = attn_mask.reshape(Shape::new([1, 10]));
 
@@ -91,7 +97,7 @@ fn compare_safetensors_model_outputs() {
     mask_attn: Some(attn_mask),
   };
 
-  let output = model.forward(input);
+  let output = model.forward(input, &device);
   let output_vec: Vec<f32> = output.to_data().value.to_vec();
 
   // Compare with outputs from outputs/ directory

@@ -1,15 +1,21 @@
+use burn::backend::wgpu::WgpuDevice;
 use burn::tensor::{Tensor, Int, Data, Shape};
 use sentence_transformers::model::{
   bert_embeddings::BertEmbeddingsInferenceBatch,
   bert_model::BertModel,
 };
 use sentence_transformers::bert_loader::{load_model_from_safetensors, load_config_from_json};
-use burn_tch::{TchBackend, TchDevice};
 use warp::Filter;
 use serde::Deserialize;
 use std::sync::Arc;
 use serde::Serialize;
 use std::env;
+
+use burn::backend::Wgpu;
+
+// Type alias for the backend to use.
+type Backend = Wgpu;
+// type Device = WgpuDevice;
 
 #[derive(Deserialize)]
 struct EmbedRequest {
@@ -39,8 +45,8 @@ fn convert_to_3d_vec(data: &Data<f32, 3>) -> Vec<Vec<Vec<f32>>> {
 }
 
 async fn embed_handler(
-  model: Arc<BertModel<TchBackend<f32>>>,
-  device: TchDevice,
+  model: Arc<BertModel<Backend>,
+  device: WgpuDevice,
   body: EmbedRequest
 ) -> Result<impl warp::Reply, warp::Rejection> {
   let batch_size = body.input_ids.len();
@@ -51,17 +57,17 @@ async fn embed_handler(
   let attn_mask = body.attention_mask.into_iter().flatten().collect::<Vec<i32>>();
 
   let input_ids_data = Data::new(input_ids, shape.clone());
-  let input_ids_tensor = Tensor::<TchBackend<f32>, 2, Int>::from_ints(input_ids_data).to_device(&device.clone());
+  let input_ids_tensor = Tensor::<Backend, 2, Int>::from_ints(input_ids_data, &device);
   
   let attention_mask_data = Data::new(attn_mask, shape.clone());
-  let attention_mask_tensor = Tensor::<TchBackend<f32>, 2, Int>::from_ints(attention_mask_data).float().to_device(&device.clone());
+  let attention_mask_tensor = Tensor::<Backend, 2, Int>::from_ints(attention_mask_data, &device).float();
 
   let input = BertEmbeddingsInferenceBatch {
     tokens: input_ids_tensor,
     mask_attn: Some(attention_mask_tensor),
   };
 
-  let output = model.forward(input);
+  let output = model.forward(input, device);
   let output_data = output.to_data();
   let embedding: Vec<Vec<Vec<f32>>> = convert_to_3d_vec(&output_data);
 
@@ -72,12 +78,13 @@ async fn embed_handler(
 
 #[tokio::main]
 async fn main() {
-  let device = TchDevice::Mps;
+  // let device = TchDevice::Mps;
+  let device = Default::default();
   let args: Vec<String> = env::args().collect();
   let model_path = args.get(1).expect("Expected model directory as first argument");
 
   let config = load_config_from_json(&format!("{}/bert_config.json", model_path));
-  let model: Arc<BertModel<_>> = Arc::new(load_model_from_safetensors::<TchBackend<f32>>(&format!("{}/bert_model.safetensors", model_path), &device, config));
+  let model: Arc<BertModel<_>> = Arc::new(load_model_from_safetensors::<Backend>(&format!("{}/bert_model.safetensors", model_path), &device, config));
 
   let with_model_device = warp::any().map(move || (model.clone(), device.clone()));
 

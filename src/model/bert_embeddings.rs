@@ -1,8 +1,8 @@
 use burn::{
   config::Config,
-  module::{Module, Param, ParamId},
+  module::Module,
   nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, LayerNorm, LayerNormConfig},
-  tensor::{backend::Backend, Data, Device, Float, Int, Shape, Tensor},
+  tensor::{backend::Backend, Data, Float, Int, Shape, Tensor},
 };
 
 #[derive(Debug, Clone)]
@@ -30,17 +30,6 @@ pub struct BertEmbeddings<B: Backend> {
   dropout: Dropout,
   max_position_embeddings: usize,
 }
-
-// pub trait InitWith {
-//   fn init_with<B:Backend>(&self, tensor:Tensor<B, 2>, device: &Device<B>) -> Embedding<B>;
-// }
-
-// impl InitWith for EmbeddingConfig {
-//   fn init_with<B:Backend>(&self, tensor:Tensor<B, 2>, device: &Device<B>) -> Embedding<B> {
-//       let weight = Param::initialized(ParamId::new(), tensor.to_device(device));
-//       Embedding { weight }
-//   }
-// }
 
 impl BertEmbeddingsConfig {
   /// Initializes BertEmbeddings with default weights
@@ -72,14 +61,14 @@ impl BertEmbeddingsConfig {
       record: BertEmbeddingsRecord<B>, device: &B::Device
   ) -> BertEmbeddings<B> {
       let word_embeddings = 
-          EmbeddingConfig::new(self.vocab_size, self.hidden_size).init_with(record.word_embeddings);
+          EmbeddingConfig::new(self.vocab_size, self.hidden_size).init(device).load_record(record.word_embeddings);
       let position_embeddings = 
-          EmbeddingConfig::new(self.max_position_embeddings, self.hidden_size).init_with(record.position_embeddings);
+          EmbeddingConfig::new(self.max_position_embeddings, self.hidden_size).init(device).load_record(record.position_embeddings);
       let token_type_embeddings = 
-          EmbeddingConfig::new(self.type_vocab_size, self.hidden_size).init_with(record.token_type_embeddings);
+          EmbeddingConfig::new(self.type_vocab_size, self.hidden_size).init(device).load_record(record.token_type_embeddings);
       let layer_norm_config = LayerNormConfig::new(self.hidden_size);
       let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-      let layer_norm = layer_norm_config.init_with(record.layer_norm);
+      let layer_norm = layer_norm_config.init(device).load_record(record.layer_norm);
 
       let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 

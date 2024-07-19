@@ -384,7 +384,7 @@ pub fn load_model<B: Backend>(dir: &str, device: &B::Device, config: BertModelCo
       encoder: encoder_record,
   };
 
-  let mut model = config.init_with::<B>(model_record);
+  let mut model = config.init_with::<B>(model_record, device);
 
   model = model.to_device(device);
   model
@@ -421,7 +421,7 @@ pub fn load_model_from_safetensors<B: Backend>(file_path: &str, device: &B::Devi
     encoder: encoder_record,
   };
 
-  let mut model = config.init_with::<B>(model_record);
+  let mut model = config.init_with::<B>(model_record, device);
 
   model = model.to_device(device);
   model

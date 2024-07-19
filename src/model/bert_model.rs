@@ -58,7 +58,7 @@ impl BertModelConfig {
   }
 
   /// Initializes a Bert model with provided weights
-  pub fn init_with<B: Backend>(&self, record: BertModelRecord<B>) -> BertModel<B> {
+  pub fn init_with<B: Backend>(&self, record: BertModelRecord<B>, device: &B::Device) -> BertModel<B> {
     let embeddings = BertEmbeddingsConfig {
       vocab_size: self.vocab_size,
       max_position_embeddings: self.max_position_embeddings,
@@ -66,7 +66,7 @@ impl BertModelConfig {
       hidden_size: self.hidden_size,
       hidden_dropout_prob: self.hidden_dropout_prob,
       layer_norm_eps: self.layer_norm_eps,
-    }.init_with(record.embeddings);
+    }.init_with(record.embeddings, device);
     let encoder = BertEncoderConfig {
       n_heads: self.n_heads,
       n_layers: self.n_layers,
@@ -75,7 +75,7 @@ impl BertModelConfig {
       hidden_size: self.hidden_size,
       intermediate_size: self.intermediate_size,
       hidden_act: "gelu".to_string(),
-    }.init_with(record.encoder);
+    }.init_with(record.encoder, device);
 
     BertModel {
         encoder,

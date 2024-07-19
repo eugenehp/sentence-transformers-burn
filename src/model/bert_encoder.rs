@@ -55,12 +55,13 @@ impl BertEncoderConfig {
   pub fn init_with<B: Backend>(
       &self,
       record: BertEncoderRecord<B>,
+      device: &B::Device
   ) -> BertEncoder<B> {
       BertEncoder {
           layers: record
               .layers
               .into_iter()
-              .map(|record| BertEncoderLayer::new_with(self, record))
+              .map(|record| BertEncoderLayer::new_with(self, record, device))
               .collect(),
       }
   }
@@ -115,24 +116,24 @@ impl<B: Backend> BertEncoderLayer<B> {
     }
   }
 
-  pub fn new_with(config: &BertEncoderConfig, record: BertEncoderLayerRecord<B>) -> Self {
+  pub fn new_with(config: &BertEncoderConfig, record: BertEncoderLayerRecord<B>, device: &B::Device) -> Self {
     let attention = BertAttentionConfig {
       hidden_size: config.hidden_size,
       num_attention_heads: config.n_heads,
       attention_head_size: config.hidden_size / config.n_heads,
       layer_norm_eps: config.layer_norm_eps,
       hidden_dropout_prob: config.dropout,
-    }.init_with(record.attention);
+    }.init_with(record.attention, device);
     let intermediate = BertIntermediateConfig {
       hidden_size: config.hidden_size,
       intermediate_size: config.intermediate_size,
-    }.init_with(record.intermediate);
+    }.init_with(record.intermediate, device);
     let output = BertOutputConfig {
       intermediate_size: config.intermediate_size,
       hidden_size: config.hidden_size,
       layer_norm_eps: config.layer_norm_eps,
       hidden_dropout_prob: config.dropout,
-    }.init_with(record.output);
+    }.init_with(record.output, device);
 
     BertEncoderLayer {
       attention,
@@ -186,18 +187,18 @@ impl BertAttentionConfig {
     }
   }
 
-  pub fn init_with<B: Backend>(&self, record: BertAttentionRecord<B>) -> BertAttention<B> {
+  pub fn init_with<B: Backend>(&self, record: BertAttentionRecord<B>, device: &B::Device) -> BertAttention<B> {
     let self_attention = BertSelfAttentionConfig { 
       hidden_size: self.hidden_size,
       num_attention_heads: self.num_attention_heads,
       attention_head_size: self.attention_head_size,
       hidden_dropout_prob: self.hidden_dropout_prob,
-    }.init_with(record.self_attention);
+    }.init_with(record.self_attention, device);
     let self_output = BertSelfOutputConfig {
       hidden_size: self.hidden_size,
       layer_norm_eps: self.layer_norm_eps,
       hidden_dropout_prob: self.hidden_dropout_prob,
-    }.init_with(record.self_output);
+    }.init_with(record.self_output, device);
 
     BertAttention {
       self_attention,
@@ -238,8 +239,8 @@ impl BertIntermediateConfig {
       }
     }
 
-    pub fn init_with<B: Backend>(&self, record: BertIntermediateRecord<B>) -> BertIntermediate<B> {
-      let dense = LinearConfig::new(self.hidden_size, self.intermediate_size).init_with(record.dense);
+    pub fn init_with<B: Backend>(&self, record: BertIntermediateRecord<B>, device: &B::Device) -> BertIntermediate<B> {
+      let dense = LinearConfig::new(self.hidden_size, self.intermediate_size).init(device).load_record(record.dense);
       let intermediate_act = Gelu::new();
 
       BertIntermediate { 
@@ -288,11 +289,11 @@ impl BertOutputConfig {
       }
     }
 
-    pub fn init_with<B: Backend>(&self, record: BertOutputRecord<B>) -> BertOutput<B> {
-      let dense = LinearConfig::new(self.intermediate_size, self.hidden_size).init_with(record.dense);
+    pub fn init_with<B: Backend>(&self, record: BertOutputRecord<B>, device: &B::Device) -> BertOutput<B> {
+      let dense = LinearConfig::new(self.intermediate_size, self.hidden_size).init(device).load_record(record.dense);
       let layer_norm_config = LayerNormConfig::new(self.hidden_size);
       let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-      let layer_norm = layer_norm_config.init_with(record.layer_norm);
+      let layer_norm = layer_norm_config.init(device).load_record(record.layer_norm);
       
       let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
@@ -353,11 +354,11 @@ impl BertSelfAttentionConfig {
         }
     }
 
-    pub fn init_with<B: Backend>(&self, record: BertSelfAttentionRecord<B>) -> BertSelfAttention<B> {
+    pub fn init_with<B: Backend>(&self, record: BertSelfAttentionRecord<B>, device: &B::Device) -> BertSelfAttention<B> {
         let all_head_size = self.num_attention_heads * self.attention_head_size;
-        let query = LinearConfig::new(self.hidden_size, all_head_size).init_with(record.query);
-        let key = LinearConfig::new(self.hidden_size, all_head_size).init_with(record.key);
-        let value = LinearConfig::new(self.hidden_size, all_head_size).init_with(record.value);
+        let query = LinearConfig::new(self.hidden_size, all_head_size).init(device).load_record(record.query);
+        let key = LinearConfig::new(self.hidden_size, all_head_size).init(device).load_record(record.key);
+        let value = LinearConfig::new(self.hidden_size, all_head_size).init(device).load_record(record.value);
         let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
         BertSelfAttention {
@@ -441,11 +442,11 @@ impl BertSelfOutputConfig {
     }
   }
 
-  pub fn init_with<B: Backend>(&self, record: BertSelfOutputRecord<B>) -> BertSelfOutput<B> {
-    let dense = LinearConfig::new(self.hidden_size, self.hidden_size).init_with(record.dense);
+  pub fn init_with<B: Backend>(&self, record: BertSelfOutputRecord<B>, device: &B::Device) -> BertSelfOutput<B> {
+    let dense = LinearConfig::new(self.hidden_size, self.hidden_size).init(device).load_record(record.dense);
     let layer_norm_config = LayerNormConfig::new(self.hidden_size);
     let layer_norm_config = layer_norm_config.with_epsilon(self.layer_norm_eps);
-    let layer_norm = layer_norm_config.init_with(record.layer_norm);
+    let layer_norm = layer_norm_config.init(device).load_record(record.layer_norm);
     
     let dropout = DropoutConfig::new(self.hidden_dropout_prob).init();
 
