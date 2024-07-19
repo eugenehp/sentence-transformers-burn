@@ -1,8 +1,8 @@
 use burn::{
   config::Config,
-  module::Module,
-  nn::{Embedding, EmbeddingConfig, LayerNorm, LayerNormConfig, Dropout, DropoutConfig},
-  tensor::{backend::Backend, Tensor, Int, Float, Data, Shape},
+  module::{Module, Param, ParamId},
+  nn::{Dropout, DropoutConfig, Embedding, EmbeddingConfig, LayerNorm, LayerNormConfig},
+  tensor::{backend::Backend, Data, Device, Float, Int, Shape, Tensor},
 };
 
 #[derive(Debug, Clone)]
@@ -30,6 +30,17 @@ pub struct BertEmbeddings<B: Backend> {
   dropout: Dropout,
   max_position_embeddings: usize,
 }
+
+// pub trait InitWith {
+//   fn init_with<B:Backend>(&self, tensor:Tensor<B, 2>, device: &Device<B>) -> Embedding<B>;
+// }
+
+// impl InitWith for EmbeddingConfig {
+//   fn init_with<B:Backend>(&self, tensor:Tensor<B, 2>, device: &Device<B>) -> Embedding<B> {
+//       let weight = Param::initialized(ParamId::new(), tensor.to_device(device));
+//       Embedding { weight }
+//   }
+// }
 
 impl BertEmbeddingsConfig {
   /// Initializes BertEmbeddings with default weights

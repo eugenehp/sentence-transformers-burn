@@ -49,7 +49,7 @@ impl BertModelConfig {
       hidden_size: self.hidden_size,
       intermediate_size: self.intermediate_size,
       hidden_act: "gelu".to_string(),
-    }.init();
+    }.init(device);
 
     BertModel {
       encoder,
